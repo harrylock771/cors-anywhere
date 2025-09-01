@@ -1,62 +1,39 @@
-const express = require("express");
-const fetch = (...args) => import("node-fetch").then(({default: fetch}) => fetch(...args));
+import express from "express";
 
 const app = express();
 
-// Proxy endpoint
-app.get("/*", async (req, res) => {
+// dynamic import wrapper for node-fetch
+const fetch = (...args) =>
+  import("node-fetch").then(({ default: fetch }) => fetch(...args));
+
+app.get("/proxy", async (req, res) => {
+  const target = req.query.url;
+  if (!target) {
+    return res.status(400).send("Missing ?url parameter");
+  }
+
   try {
-    let targetUrl = req.params[0];
+    const response = await fetch(target);
 
-    // Auto-prepend https:// if missing
-    if (!/^https?:\/\//i.test(targetUrl)) {
-      targetUrl = "https://" + targetUrl;
-    }
-
-    console.log(`➡ Proxying: ${targetUrl}`);
-
-    const response = await fetch(targetUrl, {
-      headers: {
-        "user-agent": req.headers["user-agent"] || "Mozilla/5.0",
-      },
-    });
-
-    // Clone headers but strip iframe blockers
-    const headers = {};
-    response.headers.forEach((val, key) => {
-      if (
-        !["x-frame-options", "content-security-policy", "content-security-policy-report-only"].includes(
-          key.toLowerCase()
-        )
-      ) {
-        headers[key] = val;
+    // Copy headers, but skip ones that block embedding
+    response.headers.forEach((value, name) => {
+      const forbidden = ["x-frame-options", "content-security-policy"];
+      if (!forbidden.includes(name.toLowerCase())) {
+        res.setHeader(name, value);
       }
     });
 
-    // Get body as text
-    let body = await response.text();
+    res.status(response.status);
 
-    // Remove CSP meta tags inside HTML
-    body = body.replace(/<meta[^>]*content-security-policy[^>]*>/gi, "");
-    body = body.replace(/X-Frame-Options/gi, "");
-
-    // Send cleaned response
-    res.set({
-      ...headers,
-      "access-control-allow-origin": "*", // allow CORS
-      "content-security-policy": "", // clear CSP
-      "x-frame-options": "", // clear iframe blocking
-    });
-
-    res.send(body);
+    // Stream response body
+    response.body.pipe(res);
   } catch (err) {
-    console.error("❌ Proxy error:", err);
-    res.status(500).send("Proxy Error: " + err.message);
+    console.error("Proxy error:", err.message);
+    res.status(500).send("Proxy error");
   }
 });
 
-// Railway / local port
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 Proxy server running on http://localhost:${PORT}`);
+  console.log(`Proxy running on port ${PORT}`);
 });
