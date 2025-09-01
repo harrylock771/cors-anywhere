@@ -5,7 +5,7 @@
   "license": "MIT",
   "author": "Rob Wu <rob@robwu.nl>",
   "repository": {
-    "type": "module",
+    "type": "git",
     "url": "https://github.com/Rob--W/cors-anywhere.git"
   },
   "bugs": {
